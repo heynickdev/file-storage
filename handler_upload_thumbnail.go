@@ -47,17 +47,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusBadRequest, "Incorrect header", err)
 		return
 	}
-
-    mediaType, _, err := mime.ParseMediaType(fileHeader.Header.Get("Content-Type"))
-    if err != nil {
-        respondWithError(w, http.StatusBadRequest, "Incorrect header", err)
-        return
-    }
-    if mediaType != "image/jpeg" && mediaType != "image/png" {
-        respondWithError(w, http.StatusBadRequest, "Invalid image", err)
-        return
-    }
 	defer file.Close()
+
+	mediaType, _, err := mime.ParseMediaType(fileHeader.Header.Get("Content-Type"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Incorrect header", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid image", err)
+		return
+	}
 
 	metaData, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -68,13 +68,13 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "You are not the owner", err)
 		return
 	}
-    idKey := make([]byte, 32)
-    rand.Read(idKey)
-    imageID := base64.RawURLEncoding.EncodeToString(idKey)
+	idKey := make([]byte, 32)
+	rand.Read(idKey)
+	imageID := base64.RawURLEncoding.EncodeToString(idKey)
 
-	concatStr:= fmt.Sprintf("%v.%v", imageID, strings.Split(mediaType, "/")[1])
+	concatStr := fmt.Sprintf("%v.%v", imageID, strings.Split(mediaType, "/")[1])
 	trueFilePath := filepath.Join(cfg.assetsRoot, concatStr)
-    fmt.Println(trueFilePath)
+	fmt.Println(trueFilePath)
 
 	diskFile, err := os.Create(trueFilePath)
 	if err != nil {
