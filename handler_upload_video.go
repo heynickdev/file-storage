@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -71,10 +72,10 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tmpSlug:= fmt.Sprintf("%v.mp4", videoID)
-    // ====================================================================================================================
-    // CREATE FILE
-    // ====================================================================================================================
+	tmpSlug := fmt.Sprintf("%v.mp4", videoID)
+	// ====================================================================================================================
+	// CREATE FILE
+	// ====================================================================================================================
 	tmp, err := os.CreateTemp(cfg.filepathRoot, tmpSlug)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to create temporary file", err)
@@ -84,9 +85,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer tmp.Close()
 	defer os.Remove(tmp.Name())
 
-    // ====================================================================================================================
-    // COPY AND ADD SEEK
-    // ====================================================================================================================
+	// ====================================================================================================================
+	// COPY AND ADD SEEK
+	// ====================================================================================================================
 
 	if _, err := io.Copy(tmp, file); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "unable to copy data", err)
@@ -98,35 +99,36 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-    // ====================================================================================================================
-    // RATIO
-    // ====================================================================================================================
+	// ====================================================================================================================
+	// RATIO
+	// ====================================================================================================================
 
 	ratio, err := getVideoAspectRatio(tmp.Name())
+
 	tmpSlug = fmt.Sprintf("%v/%v", ratio, tmpSlug)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to get aspect ratio", err)
 		return
 	}
 
-    // ====================================================================================================================
-    // ADD FAST START
-    // ====================================================================================================================
+	// ====================================================================================================================
+	// ADD FAST START
+	// ====================================================================================================================
 
-    nFilePath, err := processVideoForFastStart(tmp.Name())
-    if err != nil {
-        respondWithError(w, http.StatusInternalServerError, "unable to add movflags", err)
-        return
-    }
-    nFile, err := os.Open(nFilePath)
-    if err != nil {
-        respondWithError(w, http.StatusInternalServerError, "unable to opne file", err)
-        return
-    }
+	nFilePath, err := processVideoForFastStart(tmp.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "unable to add movflags", err)
+		return
+	}
+	nFile, err := os.Open(nFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "unable to opne file", err)
+		return
+	}
 
-    // ====================================================================================================================
-    // SEND TO S3
-    // ====================================================================================================================
+	// ====================================================================================================================
+	// SEND TO S3
+	// ====================================================================================================================
 
 	_, err = cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
@@ -143,13 +145,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusBadRequest, "Unable to get video form the ID", err)
 		return
 	}
-	videoURL := fmt.Sprintf("https://%v.s3.%v.amazonaws.com/%v", cfg.s3Bucket, cfg.s3Region, tmpSlug)
-	videoData.VideoURL = &videoURL
+    key := fmt.Sprintf("%v,%v", cfg.s3Bucket, tmpSlug)
+	videoData.VideoURL = &key
 	if err := cfg.db.UpdateVideo(videoData); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to save video to database", err)
 		return
 	}
-	respondWithJSON(w, http.StatusOK, videoData)
+    pVideo, err := cfg.dbVideoToSignedVideo(videoData)
+    if err != nil {
+        respondWithError(w, http.StatusBadRequest, "unable to parse video", err)
+        return
+    }
+	respondWithJSON(w, http.StatusOK, pVideo)
 }
 
 func getVideoAspectRatio(filepath string) (string, error) {
@@ -160,11 +167,10 @@ func getVideoAspectRatio(filepath string) (string, error) {
 		return "", err
 	}
 	type aspect struct {
-		Streams []struct{
+		Streams []struct {
 			Width  int `json:"width"`
 			Height int `json:"height"`
-		} `json:"streams"` 
-
+		} `json:"streams"`
 	}
 	aspectR := aspect{}
 
@@ -180,10 +186,22 @@ func getVideoAspectRatio(filepath string) (string, error) {
 }
 
 func processVideoForFastStart(filePath string) (string, error) {
-    nFilePath := fmt.Sprintf("%v.processing", filePath)
-    cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", nFilePath)
-    if err := cmd.Run(); err != nil {
-        return "", fmt.Errorf("unable to change moveflag: %v", err)
+	nFilePath := fmt.Sprintf("%v.processing", filePath)
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", nFilePath)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("unable to change moveflag: %v", err)
+	}
+	return nFilePath, nil
+}
+
+func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+	newS3 := s3.NewPresignClient(s3Client)
+    httpR, err := newS3.PresignGetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}, s3.WithPresignExpires(expireTime))
+    if err != nil {
+        return "", fmt.Errorf("unable to get HTTP request: %v", err)
     }
-    return nFilePath, nil
+	return httpR.URL, nil
 }
