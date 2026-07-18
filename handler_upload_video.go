@@ -72,6 +72,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	tmpSlug:= fmt.Sprintf("%v.mp4", videoID)
+    // ====================================================================================================================
+    // CREATE FILE
+    // ====================================================================================================================
 	tmp, err := os.CreateTemp(cfg.filepathRoot, tmpSlug)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to create temporary file", err)
@@ -81,29 +84,54 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer tmp.Close()
 	defer os.Remove(tmp.Name())
 
+    // ====================================================================================================================
+    // COPY AND ADD SEEK
+    // ====================================================================================================================
 
 	if _, err := io.Copy(tmp, file); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "unable to copy data", err)
 		return
 	}
+
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to start file from beginning for reading", err)
 		return
 	}
 
+    // ====================================================================================================================
+    // RATIO
+    // ====================================================================================================================
+
 	ratio, err := getVideoAspectRatio(tmp.Name())
 	tmpSlug = fmt.Sprintf("%v/%v", ratio, tmpSlug)
-	fmt.Println(ratio)
-
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to get aspect ratio", err)
 		return
 	}
 
+    // ====================================================================================================================
+    // ADD FAST START
+    // ====================================================================================================================
+
+    nFilePath, err := processVideoForFastStart(tmp.Name())
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, "unable to add movflags", err)
+        return
+    }
+    nFile, err := os.Open(nFilePath)
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, "unable to opne file", err)
+        return
+    }
+
+    // ====================================================================================================================
+    // SEND TO S3
+    // ====================================================================================================================
+
 	_, err = cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &tmpSlug,
-		Body:        tmp,
+		Body:        nFile,
 		ContentType: &mediaType,
 	})
 	if err != nil {
@@ -143,8 +171,6 @@ func getVideoAspectRatio(filepath string) (string, error) {
 	if err := json.Unmarshal(data.Bytes(), &aspectR); err != nil {
 		return "", err
 	}
-	fmt.Println(aspectR.Streams[0].Height)
-	fmt.Println(aspectR.Streams[0].Width)
 	if aspectR.Streams[0].Width > aspectR.Streams[0].Height {
 		return "landscape", nil
 	} else if aspectR.Streams[0].Height > aspectR.Streams[0].Width {
@@ -153,3 +179,11 @@ func getVideoAspectRatio(filepath string) (string, error) {
 	return "other", nil
 }
 
+func processVideoForFastStart(filePath string) (string, error) {
+    nFilePath := fmt.Sprintf("%v.processing", filePath)
+    cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", nFilePath)
+    if err := cmd.Run(); err != nil {
+        return "", fmt.Errorf("unable to change moveflag: %v", err)
+    }
+    return nFilePath, nil
+}
