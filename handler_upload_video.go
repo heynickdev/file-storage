@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -194,14 +193,14 @@ func processVideoForFastStart(filePath string) (string, error) {
 	return nFilePath, nil
 }
 
-func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
-	newS3 := s3.NewPresignClient(s3Client)
-    httpR, err := newS3.PresignGetObject(context.Background(), &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	}, s3.WithPresignExpires(expireTime))
-    if err != nil {
-        return "", fmt.Errorf("unable to get HTTP request: %v", err)
-    }
-	return httpR.URL, nil
-}
+// func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+// 	newS3 := s3.NewPresignClient(s3Client)
+//     httpR, err := newS3.PresignGetObject(context.Background(), &s3.GetObjectInput{
+// 		Bucket: &bucket,
+// 		Key:    &key,
+// 	}, s3.WithPresignExpires(expireTime))
+//     if err != nil {
+//         return "", fmt.Errorf("unable to get HTTP request: %v", err)
+//     }
+// 	return httpR.URL, nil
+// }

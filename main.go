@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -146,22 +143,22 @@ func main() {
 	log.Fatal(srv.ListenAndServe())
 }
 
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	if video.VideoURL == nil {
-		return video, nil
-	}
-	vURL := fmt.Sprint(*video.VideoURL)
-    parts := strings.Split(vURL, ",")
-    if len(parts) != 2 {
-        return database.Video{}, fmt.Errorf("invalid video url format")
-    }
-    bucket, key := parts[0], parts[1]
-	exp := time.Hour * 1
-    url, err := generatePresignedURL(cfg.s3Client, bucket, key, exp)
-	if err != nil {
-		return database.Video{}, fmt.Errorf("unable to generate url: %v", err)
-	}
-	video.VideoURL = &url
-
-    return video, nil
-}
+// func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+// 	if video.VideoURL == nil {
+// 		return video, nil
+// 	}
+// 	vURL := fmt.Sprint(*video.VideoURL)
+//     parts := strings.Split(vURL, ",")
+//     if len(parts) != 2 {
+//         return database.Video{}, fmt.Errorf("invalid video url format")
+//     }
+//     bucket, key := parts[0], parts[1]
+// 	exp := time.Hour * 1
+//     url, err := generatePresignedURL(cfg.s3Client, bucket, key, exp)
+// 	if err != nil {
+// 		return database.Video{}, fmt.Errorf("unable to generate url: %v", err)
+// 	}
+// 	video.VideoURL = &url
+//
+//     return video, nil
+// }
